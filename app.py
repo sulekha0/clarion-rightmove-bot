@@ -30,15 +30,15 @@ def get_new_listings():
     try:
         res = requests.get(URL, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
-        cards = soup.find_all("div", class_="propertyCard")
+        cards = soup.select("div[data-test='propertyCard']")
         results = []
 
         for card in cards:
             try:
-                link = card.find("a", class_="propertyCard-link")
-                title = card.find("h2", class_="propertyCard-title")
-                location = card.find("address", class_="propertyCard-address")
-                price = card.find("div", class_="propertyCard-priceValue")
+                link = card.select_one("a[data-test='property-title-link']")
+                title = card.select_one("h2[data-test='property-title']")
+                location = card.select_one("address")
+                price = card.select_one("div[data-test='property-price']")
 
                 if not all([link, title, location, price]):
                     continue
@@ -57,6 +57,7 @@ def get_new_listings():
                     f"🔗 {href}"
                 )
                 results.append(message)
+
             except Exception as e:
                 print("⚠️ Error parsing a card:", e)
                 continue
@@ -69,7 +70,10 @@ def get_new_listings():
 
 def start_bot():
     print("🔥 start_bot() has started running")
-    send_telegram("🤖 Clarion bot is now running every 1 second...")
+    try:
+        send_telegram("🤖 Clarion bot is now running every 1 second...")
+    except Exception as e:
+        print("❌ Telegram start message failed:", e)
 
     while True:
         try:
