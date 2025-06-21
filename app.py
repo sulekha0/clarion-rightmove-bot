@@ -5,7 +5,7 @@ import requests
 from flask import Flask
 from bs4 import BeautifulSoup
 
-# Load env vars
+# Load environment variables
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 SELF_URL = os.environ.get("SELF_URL")
@@ -21,7 +21,7 @@ def send_telegram(message):
             data={"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"},
             timeout=10
         )
-        print("📤 Telegram message sent:", message[:50])
+        print("📤 Telegram message sent:", message[:60])
     except Exception as e:
         print("❌ Telegram error:", e)
 
@@ -48,6 +48,7 @@ def get_new_listings():
                     continue
 
                 seen_links.add(href)
+
                 message = (
                     f"🏡 <b>{title.get_text(strip=True)}</b>\n"
                     f"📍 {location.get_text(strip=True)}\n"
