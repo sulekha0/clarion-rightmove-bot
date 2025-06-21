@@ -1,46 +1,21 @@
-import os
-import threading
-import time
-import requests
-from flask import Flask
-from bs4 import BeautifulSoup
-
-# Load environment variables
-TOKEN = os.environ.get("TELEGRAM_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
-SELF_URL = os.environ.get("SELF_URL")
-URL = "https://www.rightmove.co.uk/property-to-rent/find/Clarion-Housing-Lettings/UK.html?locationIdentifier=BRANCH%5E58989&propertyStatus=all&includeLetAgreed=true&_includeLetAgreed=on"
-
-seen_links = set()
-app = Flask(__name__)
-
-def send_telegram(message):
-    try:
-        res = requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"},
-            timeout=10
-        )
-        print("📤 Telegram message sent:", message[:60])
-    except Exception as e:
-        print("❌ Telegram error:", e)
-
 def get_new_listings():
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
         res = requests.get(URL, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
-        cards = soup.select("div[data-test='propertyCard']")
+
+        cards = soup.select("div[data-testid='propertyCard']")
+        print(f"🔍 Found {len(cards)} property cards")
         results = []
 
         for card in cards:
             try:
-                link = card.select_one("a[data-test='property-title-link']")
-                title = card.select_one("h2[data-test='property-title']")
+                link = card.select_one("a[data-testid='property-title-link']")
+                title = link.get("title", "No title")  # fallback title if missing
                 location = card.select_one("address")
-                price = card.select_one("div[data-test='property-price']")
+                price = card.select_one("div[data-testid='property-price']")
 
-                if not all([link, title, location, price]):
+                if not all([link, location, price]):
                     continue
 
                 href = "https://www.rightmove.co.uk" + link["href"]
@@ -50,7 +25,7 @@ def get_new_listings():
                 seen_links.add(href)
 
                 message = (
-                    f"🏡 <b>{title.get_text(strip=True)}</b>\n"
+                    f"🏡 <b>{title.strip()}</b>\n"
                     f"📍 {location.get_text(strip=True)}\n"
                     f"💷 {price.get_text(strip=True)}\n"
                     f"📅 Just now\n"
@@ -63,66 +38,8 @@ def get_new_listings():
                 continue
 
         return results
+
     except Exception as e:
         print("💥 Error scraping listings:", e)
         send_telegram(f"💥 Scraping error:\n{e}")
         return []
-
-def start_bot():
-    print("🔥 start_bot() has started running")
-    try:
-        send_telegram("🤖 Clarion bot is now running every 1 second...")
-    except Exception as e:
-        print("❌ Telegram start message failed:", e)
-
-    while True:
-        try:
-            listings = get_new_listings()
-            if listings:
-                print(f"✅ Found {len(listings)} new listings.")
-                for message in listings:
-                    send_telegram(message)
-            else:
-                print("🕵️ No listings found this cycle.")
-        except Exception as e:
-            print("💥 Error in main loop:", e)
-            send_telegram(f"💥 Bot crashed:\n{e}")
-        time.sleep(1)
-
-def self_ping():
-    while True:
-        try:
-            requests.get(SELF_URL, timeout=5)
-        except Exception as e:
-            print("⚠️ Self-ping failed:", e)
-            send_telegram(f"⚠️ Self-ping failed:\n{e}")
-        time.sleep(300)
-
-@app.route("/")
-def home():
-    return "✅ Clarion bot is alive and scanning every 1 second!"
-
-# 🔧 TEMPORARY TEST BLOCK
-if __name__ == "__main__":
-    print("🧪 Testing current listings...")
-    headers = {"User-Agent": "Mozilla/5.0"}
-    try:
-        res = requests.get(URL, headers=headers, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
-        cards = soup.select("div[data-test='propertyCard']")
-        print(f"🔍 Found {len(cards)} property cards")
-        for card in cards[:5]:  # Only print the first 5
-            link = card.select_one("a[data-test='property-title-link']")
-            title = card.select_one("h2[data-test='property-title']")
-            location = card.select_one("address")
-            price = card.select_one("div[data-test='property-price']")
-
-            print("-------")
-            print("Title:", title.get_text(strip=True) if title else "N/A")
-            print("Location:", location.get_text(strip=True) if location else "N/A")
-            print("Price:", price.get_text(strip=True) if price else "N/A")
-            print("URL:", "https://www.rightmove.co.uk" + link["href"] if link else "N/A")
-    except Exception as e:
-        print("❌ Error during test scrape:", e)
-
-    exit()
