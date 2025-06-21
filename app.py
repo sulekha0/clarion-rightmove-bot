@@ -44,8 +44,8 @@ def get_new_listings():
                 link_tag = card.select_one("a.propertyCard-link")
                 if link_tag and "href" in link_tag.attrs:
                     href = "https://www.rightmove.co.uk" + link_tag["href"]
-                    if href in seen_links:
-                        continue
+                   # if href in seen_links:
+                        #continue
                     seen_links.add(href)
 
                     title = card.select_one(".propertyCard-title")
