@@ -5,7 +5,7 @@ import requests
 from flask import Flask
 from bs4 import BeautifulSoup
 
-# Config from environment variables
+# Load env vars
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 SELF_URL = os.environ.get("SELF_URL")
@@ -16,11 +16,12 @@ app = Flask(__name__)
 
 def send_telegram(message):
     try:
-        requests.post(
+        res = requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
             data={"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"},
             timeout=10
         )
+        print("📤 Telegram message sent:", message[:50])
     except Exception as e:
         print("❌ Telegram error:", e)
 
@@ -61,15 +62,26 @@ def get_new_listings():
 
         return results
     except Exception as e:
-        send_telegram(f"⚠️ Error scraping listings:\n{e}")
+        print("💥 Error scraping listings:", e)
+        send_telegram(f"💥 Scraping error:\n{e}")
         return []
 
 def start_bot():
+    print("🔥 start_bot() has started running")
     send_telegram("🤖 Clarion bot is now running every 1 second...")
+
     while True:
-        listings = get_new_listings()
-        for message in listings:
-            send_telegram(message)
+        try:
+            listings = get_new_listings()
+            if listings:
+                print(f"✅ Found {len(listings)} new listings.")
+                for message in listings:
+                    send_telegram(message)
+            else:
+                print("🕵️ No listings found this cycle.")
+        except Exception as e:
+            print("💥 Error in main loop:", e)
+            send_telegram(f"💥 Bot crashed:\n{e}")
         time.sleep(1)
 
 def self_ping():
@@ -77,8 +89,9 @@ def self_ping():
         try:
             requests.get(SELF_URL, timeout=5)
         except Exception as e:
+            print("⚠️ Self-ping failed:", e)
             send_telegram(f"⚠️ Self-ping failed:\n{e}")
-        time.sleep(300)  # Every 5 minutes
+        time.sleep(300)
 
 @app.route("/")
 def home():
