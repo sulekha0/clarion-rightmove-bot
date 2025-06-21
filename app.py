@@ -1,21 +1,18 @@
 import os
-import threading
 import time
 import requests
-from flask import Flask
 from bs4 import BeautifulSoup
 
 # === Configuration ===
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 SELF_URL = os.environ.get("SELF_URL")
-TEST_MODE = False  # Set to True to test with local file
+TEST_MODE = False  # Set to True to use local test file
 
 # === Rightmove URL ===
 URL = "https://www.rightmove.co.uk/property-to-rent/find/Clarion-Housing-Lettings/UK-58989.html"
 
 seen_ids = set()
-app = Flask(__name__)
 
 # === Telegram Function ===
 def send_telegram(text):
@@ -48,13 +45,12 @@ def scrape_listings():
             res = requests.get(URL, headers=headers, timeout=10)
             soup = BeautifulSoup(res.text, "html.parser")
 
-            # Debug: save + print part of the live HTML
+            # Debug output
             html = soup.prettify()
             with open("live_output.html", "w", encoding="utf-8") as f:
                 f.write(html)
             print("🔍 First 1000 chars of live HTML:\n" + html[:1000])
 
-        # Use safer partial class matching
         listings = soup.find_all("div", class_=lambda x: x and "propertyCard" in x)
         print(f"🧾 Total listings found using selector: {len(listings)}")
         new_count = 0
@@ -87,14 +83,6 @@ def scrape_listings():
         print("💥 Error during scraping:", e)
         send_telegram(f"💥 Scraping error:\n{e}")
 
-# === Bot Runner ===
-def start_bot():
-    print("🔥 start_bot() has started running")
-    send_telegram("🤖 Clarion bot is now running...")
-    while True:
-        scrape_listings()
-        time.sleep(60)
-
 # === Self-Ping for Render Uptime ===
 def self_ping():
     while True:
@@ -104,15 +92,19 @@ def self_ping():
             print("⚠️ Self-ping failed:", e)
         time.sleep(300)
 
-# === Flask Route ===
-@app.route("/")
-def home():
-    return "✅ Clarion bot is alive and scanning!"
+# === Bot Runner ===
+def start_bot():
+    print("🔥 start_bot() has started running")
+    send_telegram("🤖 Clarion bot is now running...")
+    while True:
+        scrape_listings()
+        time.sleep(60)
 
-# === Main Entry ===
+# === Main (No Flask) ===
 if __name__ == "__main__":
-    print("🚀 Bot is starting...")
-    threading.Thread(target=start_bot).start()
-    threading.Thread(target=self_ping).start()
-    print("🌐 Starting Flask server on port 10000")
-    app.run(host="0.0.0.0", port=10000)
+    print("🚀 Background worker starting...")
+    from threading import Thread
+    Thread(target=start_bot).start()
+    Thread(target=self_ping).start()
+    while True:
+        time.sleep(3600)  # Keep process alive
