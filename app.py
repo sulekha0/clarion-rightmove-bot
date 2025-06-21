@@ -30,25 +30,24 @@ def get_new_listings():
     try:
         res = requests.get(URL, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
-        cards = soup.select("div[data-test='propertyCard']")
+        cards = soup.select("div.propertyCard")  # ✅ updated selector
+
+        print(f"🔍 Found {len(cards)} property cards")
         results = []
 
         for card in cards:
             try:
-                link = card.select_one("a[data-test='property-title-link']")
-                title = card.select_one("h2[data-test='property-title']")
-                location = card.select_one("address")
-                price = card.select_one("div[data-test='property-price']")
+                link = card.select_one("a.propertyCard-link")
+                title = card.select_one("h2.propertyCard-title")
+                location = card.select_one("address.propertyCard-branchSummary")
+                price = card.select_one("span.propertyCard-priceValue")
 
                 if not all([link, title, location, price]):
                     continue
 
                 href = "https://www.rightmove.co.uk" + link["href"]
-
-                # FOR TESTING: Show all listings, even previously seen ones
-                # if href in seen_links:
-                #     continue
-
+                if href in seen_links:
+                    continue
                 seen_links.add(href)
 
                 message = (
