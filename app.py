@@ -44,8 +44,9 @@ def get_new_listings():
                     continue
 
                 href = "https://www.rightmove.co.uk" + link["href"]
-                if href in seen_links:
-                    continue
+               # if href in seen_links:
+#     continue
+
 
                 seen_links.add(href)
 
