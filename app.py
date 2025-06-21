@@ -1,4 +1,4 @@
-mport requests
+import requests
 from bs4 import BeautifulSoup
 
 URL = "https://www.rightmove.co.uk/property-to-rent/find/Clarion-Housing-Lettings/UK.html?locationIdentifier=BRANCH%5E58989&propertyStatus=all&includeLetAgreed=true&_includeLetAgreed=on"
