@@ -44,9 +44,8 @@ def get_new_listings():
                     continue
 
                 href = "https://www.rightmove.co.uk" + link["href"]
-               # if href in seen_links:
-#     continue
-
+                if href in seen_links:
+                    continue
 
                 seen_links.add(href)
 
@@ -103,7 +102,27 @@ def self_ping():
 def home():
     return "✅ Clarion bot is alive and scanning every 1 second!"
 
+# 🔧 TEMPORARY TEST BLOCK
 if __name__ == "__main__":
-    threading.Thread(target=start_bot).start()
-    threading.Thread(target=self_ping).start()
-    app.run(host="0.0.0.0", port=10000)
+    print("🧪 Testing current listings...")
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        res = requests.get(URL, headers=headers, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
+        cards = soup.select("div[data-test='propertyCard']")
+        print(f"🔍 Found {len(cards)} property cards")
+        for card in cards[:5]:  # Only print the first 5
+            link = card.select_one("a[data-test='property-title-link']")
+            title = card.select_one("h2[data-test='property-title']")
+            location = card.select_one("address")
+            price = card.select_one("div[data-test='property-price']")
+
+            print("-------")
+            print("Title:", title.get_text(strip=True) if title else "N/A")
+            print("Location:", location.get_text(strip=True) if location else "N/A")
+            print("Price:", price.get_text(strip=True) if price else "N/A")
+            print("URL:", "https://www.rightmove.co.uk" + link["href"] if link else "N/A")
+    except Exception as e:
+        print("❌ Error during test scrape:", e)
+
+    exit()
