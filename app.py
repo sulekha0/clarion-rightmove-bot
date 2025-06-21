@@ -30,16 +30,13 @@ def get_new_listings():
     try:
         res = requests.get(URL, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
-        cards = soup.select("div[class*='PropertyCard_propertyCard']")
-
-        print(f"🔍 Found {len(cards)} property cards")
-
+        cards = soup.select("div[data-test='propertyCard']")
         results = []
 
         for card in cards:
             try:
-                link = card.select_one("a[data-test='propertyCard-details']")
-                title = card.select_one("h2")
+                link = card.select_one("a[data-test='property-title-link']")
+                title = card.select_one("h2[data-test='property-title']")
                 location = card.select_one("address")
                 price = card.select_one("div[data-test='property-price']")
 
@@ -47,8 +44,10 @@ def get_new_listings():
                     continue
 
                 href = "https://www.rightmove.co.uk" + link["href"]
-                if href in seen_links:
-                    continue
+
+                # FOR TESTING: Show all listings, even previously seen ones
+                # if href in seen_links:
+                #     continue
 
                 seen_links.add(href)
 
@@ -108,5 +107,4 @@ def home():
 if __name__ == "__main__":
     threading.Thread(target=start_bot).start()
     threading.Thread(target=self_ping).start()
-    # 🔧 Use dynamic port assigned by Render
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    app.run(host="0.0.0.0", port=10000)
