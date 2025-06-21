@@ -1,113 +1,90 @@
-import requests
-from bs4 import BeautifulSoup
-import time
-import threading
-from flask import Flask
-import datetime
 import os
+import threading
+import time
+import requests
+from flask import Flask
+from bs4 import BeautifulSoup
 
-# === CONFIG ===
+# Config from environment variables
+TOKEN = os.environ.get("TELEGRAM_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
+SELF_URL = os.environ.get("SELF_URL")
 URL = "https://www.rightmove.co.uk/property-to-rent/find/Clarion-Housing-Lettings/UK.html?locationIdentifier=BRANCH%5E58989&propertyStatus=all&includeLetAgreed=true&_includeLetAgreed=on"
-CHECK_INTERVAL = 1  # seconds
-SELF_PING_INTERVAL = 300  # 5 minutes
-
-# === ENV VARIABLES ===
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-SELF_URL = os.getenv("SELF_URL")
 
 seen_links = set()
-last_listing_time = datetime.datetime.now()
+app = Flask(__name__)
 
-# === TELEGRAM ALERT ===
 def send_telegram(message):
-    if not TELEGRAM_TOKEN or not CHAT_ID:
-        print("⚠️ Missing TELEGRAM_TOKEN or CHAT_ID.")
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
     try:
-        requests.post(url, data=payload, timeout=10)
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"},
+            timeout=10
+        )
     except Exception as e:
-        print(f"Telegram error: {e}")
+        print("❌ Telegram error:", e)
 
-# === RIGHTMOVE SCRAPER ===
 def get_new_listings():
     headers = {"User-Agent": "Mozilla/5.0"}
-    for attempt in range(3):
-        try:
-            res = requests.get(URL, headers=headers, timeout=10)
-            soup = BeautifulSoup(res.text, "html.parser")
-            cards = soup.select(".propertyCard")
-            new = []
-            for card in cards:
-                link_tag = card.select_one("a.propertyCard-link")
-                if link_tag and "href" in link_tag.attrs:
-                    href = "https://www.rightmove.co.uk" + link_tag["href"]
-                   # if href in seen_links:
-                        #continue
-                    seen_links.add(href)
+    try:
+        res = requests.get(URL, headers=headers, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
+        cards = soup.find_all("div", class_="propertyCard")
+        results = []
 
-                    title = card.select_one(".propertyCard-title")
-                    price = card.select_one(".propertyCard-priceValue")
-                    location = card.select_one(".propertyCard-address")
-                    date_added = card.select_one(".propertyCard-branchSummary-addedOrReduced")
+        for card in cards:
+            try:
+                link = card.find("a", class_="propertyCard-link")
+                title = card.find("h2", class_="propertyCard-title")
+                location = card.find("address", class_="propertyCard-address")
+                price = card.find("div", class_="propertyCard-priceValue")
 
-                    title_text = title.get_text(strip=True) if title else "N/A"
-                    price_text = price.get_text(strip=True) if price else "N/A"
-                    location_text = location.get_text(strip=True) if location else "N/A"
-                    date_text = date_added.get_text(strip=True) if date_added else "Date not found"
+                if not all([link, title, location, price]):
+                    continue
 
-                    message = (
-                        f"🏡 <b>{title_text}</b>\n"
-                        f"📍 {location_text}\n"
-                        f"💷 {price_text}\n"
-                        f"📅 {date_text}\n"
-                        f"🔗 <a href='{href}'>View Listing</a>"
-                    )
-                    new.append(message)
-            return new
-        except Exception as e:
-            if attempt == 2:
-                send_telegram(f"⚠️ Failed after 3 attempts:\n{e}")
-            time.sleep(1)
-    return []
+                href = "https://www.rightmove.co.uk" + link["href"]
+                if href in seen_links:
+                    continue
 
-# === BOT LOOP ===
+                seen_links.add(href)
+                message = (
+                    f"🏡 <b>{title.get_text(strip=True)}</b>\n"
+                    f"📍 {location.get_text(strip=True)}\n"
+                    f"💷 {price.get_text(strip=True)}\n"
+                    f"📅 Just now\n"
+                    f"🔗 {href}"
+                )
+                results.append(message)
+            except Exception as e:
+                print("⚠️ Error parsing a card:", e)
+                continue
+
+        return results
+    except Exception as e:
+        send_telegram(f"⚠️ Error scraping listings:\n{e}")
+        return []
+
 def start_bot():
-    global last_listing_time
     send_telegram("🤖 Clarion bot is now running every 1 second...")
     while True:
-        new_listings = get_new_listings()
-        if new_listings:
-            last_listing_time = datetime.datetime.now()
-            for msg in new_listings:
-                send_telegram(msg)
+        listings = get_new_listings()
+        for message in listings:
+            send_telegram(message)
+        time.sleep(1)
 
-        minutes_since = (datetime.datetime.now() - last_listing_time).total_seconds() / 60
-        if minutes_since > 180:
-            send_telegram("⚠️ No new listings in 3+ hours. Bot still running.")
-            last_listing_time = datetime.datetime.now()
-        time.sleep(CHECK_INTERVAL)
-
-# === SELF-PING LOOP ===
-def start_self_ping():
+def self_ping():
     while True:
         try:
-            if SELF_URL:
-                requests.get(SELF_URL, timeout=10)
+            requests.get(SELF_URL, timeout=5)
         except Exception as e:
-            print(f"Self-ping error: {e}")
-        time.sleep(SELF_PING_INTERVAL)
+            send_telegram(f"⚠️ Self-ping failed:\n{e}")
+        time.sleep(300)  # Every 5 minutes
 
-# === FLASK APP ===
-app = Flask(__name__)
-@app.route('/')
+@app.route("/")
 def home():
     return "✅ Clarion bot is alive and scanning every 1 second!"
 
-# === START EVERYTHING ===
 if __name__ == "__main__":
     threading.Thread(target=start_bot).start()
-    threading.Thread(target=start_self_ping).start()
+    threading.Thread(target=self_ping).start()
     app.run(host="0.0.0.0", port=10000)
