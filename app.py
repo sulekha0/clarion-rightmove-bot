@@ -1,82 +1,108 @@
 import os
-import time
 import threading
+import time
 import requests
 from flask import Flask
 from bs4 import BeautifulSoup
 
-# Environment variables
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-TARGET_URL = os.environ.get("TARGET_URL", "https://www.rightmove.co.uk/property-to-rent/find/Clarion-Housing-Lettings/UK-58989.html")
-CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", 120))  # default: every 2 minutes
+# === Configuration ===
+TOKEN = os.environ.get("TELEGRAM_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
+SELF_URL = os.environ.get("SELF_URL")
+TEST_MODE = True  # 🔁 Set to False for live scraping
+
+# === Rightmove URL ===
+URL = "https://www.rightmove.co.uk/property-to-rent/find/Clarion-Housing-Lettings/UK-58989.html"
 
 seen_ids = set()
-
-def send_telegram_message(text):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
-    try:
-        response = requests.post(url, data=payload)
-        print(f"[Telegram] Status: {response.status_code} | Response: {response.text}")
-    except Exception as e:
-        print(f"[Telegram Error] {e}")
-
-def scrape_and_notify():
-    global seen_ids
-    while True:
-        print(f"[Scraper] Checking listings at {TARGET_URL}")
-        try:
-            response = requests.get(TARGET_URL, timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            listings = soup.select('div[data-testid^="propertyCard-"]')
-
-            new_listings = []
-            for listing in listings:
-                link_tag = listing.select_one('a[href*="/properties/"]')
-                price_tag = listing.select_one('[data-testid="property-price"]')
-                address_tag = listing.select_one('[data-testid="property-address"]')
-
-                if not link_tag:
-                    continue
-
-                href = link_tag['href']
-                listing_id = href.split("/")[2].split("#")[0]
-                if listing_id in seen_ids:
-                    continue
-
-                seen_ids.add(listing_id)
-                full_url = f"https://www.rightmove.co.uk{href}"
-                price = price_tag.get_text(strip=True) if price_tag else "No price"
-                address = address_tag.get_text(strip=True) if address_tag else "No address"
-
-                message = f"🏡 <b>New Listing Found!</b>\n📍 {address}\n💰 {price}\n🔗 <a href='{full_url}'>View Listing</a>"
-                new_listings.append(message)
-
-            if new_listings:
-                print(f"[Scraper] Found {len(new_listings)} new listings")
-                for msg in new_listings:
-                    send_telegram_message(msg)
-            else:
-                print("[Scraper] No new listings")
-
-        except Exception as e:
-            print(f"[Scraper Error] {e}")
-        time.sleep(CHECK_INTERVAL)
-
-# Flask web server for Render uptime
 app = Flask(__name__)
 
-@app.route("/")
-def home():
-    return "Clarion Rightmove Bot is running!"
+# === Telegram Function ===
+def send_telegram(text):
+    try:
+        payload = {
+            "chat_id": CHAT_ID,
+            "text": text,
+            "parse_mode": "Markdown"
+        }
+        res = requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            data=payload,
+            timeout=10
+        )
+        print(f"📤 Sent message: {text[:60]}")
+    except Exception as e:
+        print("❌ Telegram error:", e)
 
+# === Scraper Function ===
+def scrape_listings():
+    print("[Scraper] Checking listings...")
+
+    try:
+        if TEST_MODE:
+            with open("test_listing.html", "r", encoding="utf-8") as f:
+                soup = BeautifulSoup(f, "html.parser")
+            print("[Scraper] Using test HTML file.")
+        else:
+            headers = {"User-Agent": "Mozilla/5.0"}
+            res = requests.get(URL, headers=headers, timeout=10)
+            soup = BeautifulSoup(res.text, "html.parser")
+
+        listings = soup.find_all("div", class_="PropertyCard_propertyCardContainer__VSRSA")
+        new_count = 0
+
+        for listing in listings:
+            link_tag = listing.find("a", href=True)
+            if not link_tag:
+                continue
+
+            href = link_tag["href"]
+            property_id = href.split("/")[2].split("#")[0]
+            if property_id in seen_ids:
+                continue
+
+            seen_ids.add(property_id)
+            new_count += 1
+
+            full_link = "https://www.rightmove.co.uk" + href
+            address_tag = listing.find("address")
+            price_tag = listing.find("div", class_="PropertyPrice_price__VL65t")
+
+            address = address_tag.get_text(strip=True) if address_tag else "No address"
+            price = price_tag.get_text(strip=True) if price_tag else "No price"
+
+            message = f"🏠 *New Listing Detected!*\n\n📍 *Address*: {address}\n💷 *Price*: {price}\n🔗 [View Listing]({full_link})"
+            send_telegram(message)
+
+        print(f"✅ Found {new_count} new listings.")
+    except Exception as e:
+        print("💥 Error during scraping:", e)
+        send_telegram(f"💥 Scraping error:\n{e}")
+
+# === Bot Runner ===
 def start_bot():
     print("🔥 start_bot() has started running")
-    thread = threading.Thread(target=scrape_and_notify)
-    thread.daemon = True
-    thread.start()
+    send_telegram("🤖 Clarion bot is now running...")
+    while True:
+        scrape_listings()
+        time.sleep(60)
 
+# === Self-Ping for Render Uptime ===
+def self_ping():
+    while True:
+        try:
+            requests.get(SELF_URL, timeout=5)
+        except Exception as e:
+            print("⚠️ Self-ping failed:", e)
+        time.sleep(300)
+
+# === Flask Route ===
+@app.route("/")
+def home():
+    return "✅ Clarion bot is alive and scanning!"
+
+# === Main ===
 if __name__ == "__main__":
-    start_bot()
+    threading.Thread(target=start_bot).start()
+    threading.Thread(target=self_ping).start()
     app.run(host="0.0.0.0", port=10000)
